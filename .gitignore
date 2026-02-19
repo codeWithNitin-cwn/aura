@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.mp3
+*.wav
+*.webm
+*.png
+*.zip
+calendar.csv
+emails.log
+attendance.csv
