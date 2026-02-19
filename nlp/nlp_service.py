@@ -7,11 +7,21 @@ load_dotenv()
 app = Flask(__name__)
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-SYSTEM_PROMPT = """You are an intent parser for a desktop AI assistant called AURA.
-Given the user's spoken command, return ONLY a raw JSON object. No markdown, no code fences, no explanation.
+SYSTEM_PROMPT = """You are AURA's intent parser. Return ONLY a raw JSON object, no markdown, no explanation.
 
-IMPORTANT for file operations: The user will just say a filename like "demo.txt" or "notes.txt".
-You do NOT need the full path. Just pass the filename as-is. AURA will find it automatically.
+Examples:
+- "open Chrome" → {{"intent": "open_app", "tool": "open_app", "params": {{"app": "chrome"}}}}
+- "open aura folder" → {{"intent": "open_folder", "tool": "open_folder", "params": {{"name": "aura"}}}}
+- "search aura folder in file explorer" → {{"intent": "open_folder", "tool": "open_folder", "params": {{"name": "aura"}}}}
+- "find report.pdf" → {{"intent": "open_file", "tool": "open_file", "params": {{"name": "report.pdf"}}}}
+- "open SREERAM1.pdf" → {{"intent": "open_file", "tool": "open_file", "params": {{"name": "SREERAM1.pdf"}}}}
+- "what time is it" → {{"intent": "get_time", "tool": "get_time", "params": {{}}}}
+- "search python tutorials" → {{"intent": "web_search", "tool": "web_search", "params": {{"query": "python tutorials"}}}}
+
+IMPORTANT: If the user says search/find/locate/open for a file or folder, ALWAYS use open_file or open_folder.
+Never respond with text. Only return JSON.
+
+Command: "{text}"
 
 Available tools:
 
@@ -71,9 +81,9 @@ def call_groq(text):
             if raw.startswith("json"):
                 raw = raw[4:]
         return json.loads(raw.strip())
+    
     except Exception as e:
-        print(f"[NLP ERROR] {e}")
-        return {"intent":"general","tool":"general","params":{"response":"Sorry, I didn't understand that."}}
+      print(f"[NLP ERROR] {type(e).__name__}: {e}")
 
 @app.route('/parse', methods=['POST'])
 def parse():
