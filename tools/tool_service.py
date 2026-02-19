@@ -28,11 +28,9 @@ SEARCH_LOCATIONS = [
 def find_file_everywhere(filename):
     """Search for a file by name across all common locations. Returns list of full paths."""
     found = []
-    # If it's already a full path and exists, return it directly
     if os.path.exists(filename):
         return [filename]
 
-    # Extract just the filename in case a partial path was given
     name = os.path.basename(filename) if os.path.sep in filename else filename
 
     for location in SEARCH_LOCATIONS:
@@ -43,35 +41,21 @@ def find_file_everywhere(filename):
             for m in matches:
                 if m not in found:
                     found.append(m)
-            if found:  # stop at first location that has results to keep it fast
+            if found:
                 break
         except Exception:
             continue
     return found
 
 def resolve_path(path):
-    """
-    Smart path resolver:
-    - If full path exists → use it
-    - If just a filename → search everywhere
-    - Returns (resolved_path, error_message)
-    """
     path = os.path.expandvars(os.path.expanduser(path.strip()))
-
-    # Already a full existing path
     if os.path.exists(path):
         return path, None
-
-    # Just a filename — search for it
     results = find_file_everywhere(path)
     if results:
-        return results[0], None  # return first match
-
-    # Not found anywhere — if it looks like a new file path, allow creation
+        return results[0], None
     if os.path.sep in path or ':' in path:
-        return path, None  # treat as intended new path
-
-    # Default: put on Desktop
+        return path, None
     desktop = os.path.expanduser('~\\Desktop')
     return os.path.join(desktop, path), None
 
@@ -126,6 +110,7 @@ def tool_email(params):
     )
     webbrowser.open(url)
     return f"Gmail opened — composing email to {to} with subject '{subject}'. Just hit Send."
+
 # ════════════════════════════════════════════
 # 4. OPEN APP
 # ════════════════════════════════════════════
@@ -161,6 +146,74 @@ def tool_open_app(params):
     except Exception as e:
         return f"Could not open {target}: {e}"
 
+# ════════════════════════════════════════════
+# 4b. OPEN FOLDER — searches everywhere, opens in Explorer
+# ════════════════════════════════════════════
+FOLDER_SHORTCUTS = {
+    'desktop':   os.path.expanduser('~\\Desktop'),
+    'documents': os.path.expanduser('~\\Documents'),
+    'downloads': os.path.expanduser('~\\Downloads'),
+    'pictures':  os.path.expanduser('~\\Pictures'),
+    'music':     os.path.expanduser('~\\Music'),
+    'videos':    os.path.expanduser('~\\Videos'),
+    'home':      os.path.expanduser('~'),
+    'c drive':   'C:\\',
+    'c:':        'C:\\',
+}
+
+def tool_open_folder(params):
+    name = params.get('name', '').strip()
+    if not name:
+        subprocess.Popen('explorer.exe')
+        return "Opened File Explorer."
+
+    # Check shortcut names first
+    shortcut = FOLDER_SHORTCUTS.get(name.lower())
+    if shortcut:
+        subprocess.Popen(f'explorer "{shortcut}"')
+        return f"Opened {name} folder."
+
+    # Check if it's already a full path
+    if os.path.isdir(name):
+        subprocess.Popen(f'explorer "{name}"')
+        return f"Opened folder: {name}"
+
+    # Search in all common locations recursively
+    search_roots = [
+        os.path.expanduser('~\\Desktop'),
+        os.path.expanduser('~\\Documents'),
+        os.path.expanduser('~\\Downloads'),
+        os.path.expanduser('~'),
+        'C:\\Users\\Nitin',
+    ]
+
+    found = None
+    for root in search_roots:
+        if not os.path.exists(root):
+            continue
+        try:
+            for dirpath, dirnames, _ in os.walk(root):
+                for d in dirnames:
+                    if d.lower() == name.lower():
+                        found = os.path.join(dirpath, d)
+                        break
+                if found:
+                    break
+        except Exception:
+            continue
+        if found:
+            break
+
+    if found:
+        subprocess.Popen(f'explorer "{found}"')
+        return f"Found and opened folder: {found}"
+
+    # Last resort: open Explorer with Windows search
+    subprocess.Popen(
+        f'explorer "search-ms:displayname=Search Results&query={name}"',
+        shell=True
+    )
+    return f"Could not find '{name}' directly. Opened File Explorer search for it."
 
 # ════════════════════════════════════════════
 # 5. CLOSE APP
@@ -185,7 +238,6 @@ def tool_read_file(params):
     try:
         path, err = resolve_path(raw_path)
         if not os.path.exists(path):
-            # Try searching explicitly
             results = find_file_everywhere(raw_path)
             if not results:
                 return f"Could not find '{raw_path}' anywhere on your PC."
@@ -223,7 +275,7 @@ def tool_create_file(params):
 def tool_edit_file(params):
     raw_path = params.get('path', '')
     content  = params.get('content', '')
-    mode     = params.get('mode', 'overwrite')  # overwrite or append
+    mode     = params.get('mode', 'overwrite')
     try:
         path, _ = resolve_path(raw_path)
         if not os.path.exists(path):
@@ -239,7 +291,7 @@ def tool_edit_file(params):
         return f"{action} {path} successfully."
     except Exception as e:
         return f"Could not edit file: {e}"
-    
+
 # ════════════════════════════════════════════
 # 9. SCREEN VISION
 # ════════════════════════════════════════════
@@ -269,15 +321,15 @@ def tool_desktop_icons(params):
         return r.json().get("result", "Could not list icons.")
     except Exception as e:
         return f"Vision service error: {e}"
+
 # ════════════════════════════════════════════
-# 9. DELETE FILE — searches everywhere
+# 10. DELETE FILE — searches everywhere
 # ════════════════════════════════════════════
 def tool_delete_file(params):
     raw_path = params.get('path', '')
     try:
         path, _ = resolve_path(raw_path)
 
-        # Direct hit
         if os.path.isfile(path):
             os.remove(path)
             return f"Deleted file: {path}"
@@ -285,7 +337,6 @@ def tool_delete_file(params):
             shutil.rmtree(path)
             return f"Deleted folder: {path}"
 
-        # Search everywhere
         name    = os.path.basename(raw_path) or raw_path
         results = find_file_everywhere(name)
         if not results:
@@ -299,7 +350,7 @@ def tool_delete_file(params):
                 elif os.path.isdir(r):
                     shutil.rmtree(r)
                 deleted.append(r)
-            except Exception as e:
+            except Exception:
                 pass
 
         if deleted:
@@ -309,14 +360,13 @@ def tool_delete_file(params):
         return f"Could not delete: {e}"
 
 # ════════════════════════════════════════════
-# 10. LIST FILES — searches everywhere
+# 11. LIST FILES
 # ════════════════════════════════════════════
 def tool_list_files(params):
     raw_path = params.get('path', '~\\Desktop')
     try:
         path = os.path.expandvars(os.path.expanduser(raw_path))
         if not os.path.exists(path):
-            # Maybe they said a folder name like "downloads" or "documents"
             guesses = {
                 'desktop':   os.path.expanduser('~\\Desktop'),
                 'downloads': os.path.expanduser('~\\Downloads'),
@@ -339,7 +389,7 @@ def tool_list_files(params):
         return f"Could not list files: {e}"
 
 # ════════════════════════════════════════════
-# 11. FIND FILE — search by name
+# 12. FIND FILE — search by name
 # ════════════════════════════════════════════
 def tool_find_file(params):
     name = params.get('name', '')
@@ -352,7 +402,7 @@ def tool_find_file(params):
         return f"Search failed: {e}"
 
 # ════════════════════════════════════════════
-# 12. MOUSE CONTROL
+# 13. MOUSE CONTROL
 # ════════════════════════════════════════════
 def tool_mouse(params):
     action = params.get('action', '')
@@ -366,7 +416,7 @@ def tool_mouse(params):
             return "Clicked."
         elif action == 'move':
             pyautogui.moveTo(int(params.get('x',500)), int(params.get('y',500)), duration=0.5)
-            return f"Moved mouse."
+            return "Moved mouse."
         elif action == 'scroll_up':
             pyautogui.scroll(int(params.get('amount', 3)))
             return "Scrolled up."
@@ -384,7 +434,7 @@ def tool_mouse(params):
         return f"Mouse failed: {e}"
 
 # ════════════════════════════════════════════
-# 13. KEYBOARD CONTROL
+# 14. KEYBOARD CONTROL
 # ════════════════════════════════════════════
 def tool_keyboard(params):
     action = params.get('action', '')
@@ -401,13 +451,13 @@ def tool_keyboard(params):
         elif action == 'screenshot':
             path = os.path.join(os.path.expanduser('~\\Desktop'), f'screenshot_{int(time.time())}.png')
             pyautogui.screenshot(path)
-            return f"Screenshot saved to Desktop."
+            return "Screenshot saved to Desktop."
         return f"Unknown keyboard action: {action}"
     except Exception as e:
         return f"Keyboard failed: {e}"
 
 # ════════════════════════════════════════════
-# 14. VOLUME
+# 15. VOLUME
 # ════════════════════════════════════════════
 def tool_volume(params):
     action = params.get('action','')
@@ -426,7 +476,7 @@ def tool_volume(params):
         return f"Volume failed: {e}"
 
 # ════════════════════════════════════════════
-# 15. SYSTEM INFO
+# 16. SYSTEM INFO
 # ════════════════════════════════════════════
 def tool_system_info(params):
     query = params.get('query','all').lower()
@@ -456,7 +506,7 @@ def tool_system_info(params):
         return f"System info failed: {e}"
 
 # ════════════════════════════════════════════
-# 16. WINDOW CONTROL
+# 17. WINDOW CONTROL
 # ════════════════════════════════════════════
 def tool_window(params):
     action = params.get('action','')
@@ -467,46 +517,50 @@ def tool_window(params):
             return f"Open windows: {', '.join(wins[:15])}"
         wins = [w for w in gw.getAllWindows() if target in w.title.lower()]
         if not wins: return f"No window matching '{target}'."
-        if action == 'focus':   wins[0].activate();  return f"Focused: {wins[0].title}"
-        if action == 'minimize':wins[0].minimize();  return f"Minimized: {wins[0].title}"
-        if action == 'maximize':wins[0].maximize();  return f"Maximized: {wins[0].title}"
+        if action == 'focus':    wins[0].activate();  return f"Focused: {wins[0].title}"
+        if action == 'minimize': wins[0].minimize();  return f"Minimized: {wins[0].title}"
+        if action == 'maximize': wins[0].maximize();  return f"Maximized: {wins[0].title}"
         return f"Unknown window action: {action}"
     except Exception as e:
         return f"Window control failed: {e}"
 
-# ════════════════════════════════════════════
-# 17. GENERAL
-# ════════════════════════════════════════════
-def tool_general(params):
-    return params.get('response', "I'm AURA. How can I help?")
 # ════════════════════════════════════════════
 # 18. GET TIME / DATE
 # ════════════════════════════════════════════
 def tool_get_time(params):
     now = datetime.now()
     return f"The current time is {now.strftime('%I:%M %p')} and today is {now.strftime('%A, %d %B %Y')}."
+
+# ════════════════════════════════════════════
+# 19. GENERAL FALLBACK
+# ════════════════════════════════════════════
+def tool_general(params):
+    return params.get('response', "I'm AURA. How can I help?")
+
 # ════════════════════════════════════════════
 # ROUTER
 # ════════════════════════════════════════════
 TOOLS = {
-    'web_search':  tool_web_search,
-    'calendar':    tool_calendar,
-    'email':       tool_email,
-    'open_app':    tool_open_app,
-    'close_app':   tool_close_app,
-    'read_file':   tool_read_file,
-    'create_file': tool_create_file,
-    'edit_file':   tool_edit_file,
-    'get_time':    tool_get_time,   
-    'delete_file': tool_delete_file,
-    'list_files':  tool_list_files,
-    'find_file':   tool_find_file,
-    'mouse':       tool_mouse,
-    'keyboard':    tool_keyboard,
-    'volume':      tool_volume,
-    'system_info': tool_system_info,
-    'window':      tool_window,
-    'general':     tool_general,
+    'web_search':    tool_web_search,
+    'calendar':      tool_calendar,
+    'email':         tool_email,
+    'open_app':      tool_open_app,
+    'open_folder':   tool_open_folder,   # ← NEW
+    'search_folder': tool_open_folder,   # ← NEW (alias)
+    'close_app':     tool_close_app,
+    'read_file':     tool_read_file,
+    'create_file':   tool_create_file,
+    'edit_file':     tool_edit_file,
+    'get_time':      tool_get_time,
+    'delete_file':   tool_delete_file,
+    'list_files':    tool_list_files,
+    'find_file':     tool_find_file,
+    'mouse':         tool_mouse,
+    'keyboard':      tool_keyboard,
+    'volume':        tool_volume,
+    'system_info':   tool_system_info,
+    'window':        tool_window,
+    'general':       tool_general,
     'read_screen':   tool_read_screen,
     'click_icon':    tool_click_icon,
     'desktop_icons': tool_desktop_icons,
